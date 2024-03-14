@@ -10,7 +10,8 @@ Equipment:
 6. Baterry Power source
 7. Two Wheel Encoders
 
-Challenges
+Challenges:
+
 Bronze:
 In summary: Traverse the track, don’t crash into any obstacles, report events wirelessly.​
 Details:
