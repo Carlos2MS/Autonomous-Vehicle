@@ -9,40 +9,27 @@ const int enB = 10;
 const int in3 = 5;
 const int in4 = 6;
 
-// Set the speed (0 = off and 255 = max speed)
-int motorSpeed = 153;
 
 // Ultrasonic Sensor Pins
 const int trig = 3; // Trigger Pin
 const int echo = 4; // Echo Pin
 long duration, cm;
 
-//Wheel Encoder
+// Wheel Encoder Pins and Variables
 const int WheelL = 1;
 const int WheelR = 2;
 
-const int revolution = 7;
+const int revolution = 384;
 const int wheel_d = 64; // Wheel diameter (mm)
 const float wheel_c = PI * wheel_d; // Wheel circumference (mm)
 
-int countL = 0;
-double distanceL= 0;
-int countR = 0;
-double distanceR = 0;
+double distanceL = 0; // Distance travelled by left wheel
+double distanceR = 0; // Distance travelled by right wheel
+double Totaldistance = 0;
 
-unsigned long ticks_L = 0;
-unsigned long ticks_R = 0;
-
-//Speed
-unsigned long previousTime = 0;
-double previousDistanceR = 0;
-double previousDistanceL = 0;
-double speedR = 0;
-double speedL = 0;
-double speed = 0;
-
-//GUI
-double Kg = 2;
+unsigned long prevTime = 0;
+float pwmValue = 0;
+int count = 0;
 
 
 void setup() {
@@ -74,56 +61,64 @@ void setup() {
 }
 
 void loop() {
-  go_foward();
-  
-  unsigned long currentTime = millis();
-
-  // Calculate the time elapsed since the last distance measurement
-  unsigned long elapsedTime = currentTime - previousTime;
-
-  //Update distance for left wheel
-  updateDistance(ticks_L, countL, distanceL, ticks_L, wheel_c);
-
-  //Update distance for right wheel
-  updateDistance(ticks_R, countR, distanceR, ticks_R, wheel_c);
-
-  if(distanceL > distanceR){
-    //client.print("Distance ");
-    //client.println(distanceL);
-    speedL = (distanceL - previousDistanceL) / (elapsedTime / 1000.0);
-  }
-  else{
-    //client.print("Distance ");
-    //client.println(distanceR);
-    speedR = (distanceR - previousDistanceR) / (elapsedTime / 1000.0);
-  }
-
-  if(speedL > speedR){
-    speed = speedL;
-  }
-  else{
-    speed = speedR;
-  }
-
-  //Check if there's a user input
+  // Read the console input for desired velocity
   if (Serial.available() > 0) {
-    // Read the incoming byte
-    int UserIn = Serial.parseInt();
-    
-    if (UserIn >0) {
-      previousUserSpeed = UserSpeed;
-      UserSpeed = UserIn;  // Update the user speed
-    
-      // Inform the user about the change in speed
-      Serial.print("User speed updated to ");
-      Serial.println(UserSpeed);
+    float desiredVelocity = Serial.parseFloat(); // Read the float input from the console
+
+    Serial.print("Desired Velocity: ");
+    Serial.println(desiredVelocity);
+
+    // Calculate the PWM value based on desired velocity
+    if (desiredVelocity >= 0) {
+      pwmValue = map(desiredVelocity, 0, 10, 0, 255); // Assuming the velocity is in the range [0, 1] m/s
+      Serial.print("Mapped PWM Value: ");
+      Serial.println(pwmValue);
+      
+      // Apply the new speed to both moto
+      analogWrite(enA, pwmValue);
+      analogWrite(enB, pwmValue);
     } else {
-      Serial.println("Invalid speed input.");
+      Serial.println("Invalid velocity input. Please enter a non-negative value.");
     }
-    
-    // Wait for a brief moment to prevent multiple readings
-    delay(100);
   }
+
+
+  // Calculate velocity of the buggy in m/s
+  unsigned long currentTime = millis();
+  float elapsedTime = (currentTime - prevTime) / 1000.0; // Convert milliseconds to seconds
+  prevTime = currentTime;
+
+  // Calculate distance based on wheel encoder ticks
+  float distanceTravelled = (count * wheel_c) / 1000; // Distance in m
+
+  Totaldistance += distanceTravelled;
+  Serial.print(Totaldistance);
+
+  // Reset count for next iteration
+  count = 0;
+  float velocity = distanceTravelled / elapsedTime;
+
+  // Send velocity to console for debugging
+  Serial.print("Current Velocity: ");
+  Serial.print(velocity);
+  Serial.println(" m/s");
+
+  // Reset distance variable
+  distanceL = 0;
+  distanceR = 0;
+  prevTime = currentTime;
+
+  // Your code for reading ultrasonic sensor and adjusting motion based on sensor readings
+  // Here's a basic example
+  SendSound(); // Send ultrasonic pulse
+  delay(100); // Wait for pulse to return
+  long duration = pulseIn(echo, HIGH); // Measure the time it takes for the pulse to return
+  long cm = microsecondsToCentimeters(duration); // Convert the time into distance in cm
+
+  // Adjust motion based on distance reading
+  go_forward();
+
+}
 
   //Use GUI
   GUIControl(speed, UserSpeed);
@@ -146,16 +141,6 @@ void countRight() {
   ticks_R++;
 }
 
-//Distance function
-void updateDistance(int &ticks, int &count, double &distance, unsigned long &ticksReset, double wheelCircumference) {
-  if (ticks >= revolution) {
-    count++;
-    distance = (count * wheelCircumference) / 1000.0; // Convert to meters
-    ticks = 0;
-  }
-}
-
-
 // Ultrasonic functions
 long microsecondsToCentimeters(long microseconds) {
   return microseconds / 29 / 2;
@@ -177,44 +162,9 @@ void go_forward() {
   digitalWrite(in4, LOW);
 }
 
-void go_backwards() {
-  digitalWrite(in1, LOW);
-  digitalWrite(in2, HIGH);
-  digitalWrite(in3, LOW);
-  digitalWrite(in4, HIGH);
-}
-
-void go_right() {
-  digitalWrite(in1, LOW);
-  digitalWrite(in2, LOW);
-  digitalWrite(in3, HIGH);
-  digitalWrite(in4, LOW);
-}
-
-void go_left() {
-  digitalWrite(in1, HIGH);
-  digitalWrite(in2, LOW);
-  digitalWrite(in3, LOW);
-  digitalWrite(in4, LOW);
-}
-
 void stop_all() {
   digitalWrite(in1, LOW);
   digitalWrite(in2, LOW);
   digitalWrite(in3, LOW);
   digitalWrite(in4, LOW);
-}
-
-//GUI function
-void GUIControl(double speed,double Userspeed){
-  if (speed > UserSpeed){
-    motorSpeed = motorSpeed - Kg; 
-    motorSpeed = constrain(motorSpeed, 0, 255);
-  }
-  else if (speed < UserSpeed){
-    motorSpeed = motorSpeed + Kg; 
-    motorSpeed = constrain(motorSpeed, 0, 255);
-  }
-  analogWrite(enA, motorSpeed);
-  analogWrite(enB, motorSpeed);
 }
