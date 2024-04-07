@@ -1,9 +1,5 @@
 #include <WiFiS3.h>
 
-int tempSpeed = 0;
-bool PIB = false;
-bool GUI = false;
-
 // WiFi Credentials
 char ssid[] = "C";
 char pass[] = "1234567890";
@@ -58,14 +54,17 @@ const float Ki = 0.17; // Integral gain
 const float Kd = 0.05;  
 const int desiredDistance = 8;  // Desired distance from the object
 const int range = 50; //Object detection range in cm
+bool PIB = false;
 
-// Variables for PID control
 float previousError = 0;
 float integral = 0;
 
+// Speed - GUI
+int tempSpeed = 0;
 int UserSpeed = 0;
-
 String speedString = "0";
+bool GUI = false;
+
 
 void setup() {
   Serial.begin(9600);
@@ -152,16 +151,32 @@ void loop() {
       Serial.println("Go");
 
       while (true) {
-        //Ultrasonic
+        // Ultrasonic
         SendSound();
         duration = pulseIn(echo, HIGH);
         cm = microsecondsToCentimeters(duration);
 
         bool all_clearL = digitalRead(LEYE);
         bool all_clearR = digitalRead(REYE);
+        
+        // Track movement function
+        Check(all_clearL, all_clearR, cm);
 
-        if (PIB == true){
-          Serial.println("PIB");
+        if (GUI == true){
+          // Keep last speed
+          if(UserSpeed != 0){
+          tempSpeed = UserSpeed;
+          }
+
+          UserSpeed = tempSpeed;
+
+          //GUI Control
+          if(UserSpeed >= 0){
+          GUIControl(UserSpeed);
+          }
+        }
+
+        if (cm <= 50){
           // Calculate error for PID control
           float error = cm - desiredDistance;
   
@@ -187,28 +202,6 @@ void loop() {
           analogWrite(enA, motorSpeed);
           analogWrite(enB, motorSpeed);
         }
-        
-        else if (GUI == true){
-          // Read Speed
-          UserSpeed = speedString.toInt();
-           // Convert the string to an integer
-          Serial.print("Received Speed: ");
-          Serial.println(UserSpeed);
-
-          if(UserSpeed != 0){
-          tempSpeed = UserSpeed;
-          }
-
-          UserSpeed = tempSpeed;
-
-          //GUI Control
-          if(UserSpeed >= 0){
-          GUIControl(UserSpeed);
-          }
-        }
-
-        //Track movement function
-        Check(all_clearL, all_clearR, cm);
 
         // Calculate velocity of the buggy in m/s
         unsigned long currentTime = millis();
@@ -230,7 +223,7 @@ void loop() {
         client.print(String(speed));
         client.println(" m/s");  
 
-        //Object detected
+        // Object detected
         if (cm <= 50){
           client.print("Object Detected at ");
           client.println(String(cm) + " cm");
@@ -241,9 +234,6 @@ void loop() {
         distanceR = 0;
         prevTime = currentTime;
 
-        // Add a delay to avoid overwhelming the Arduino
-        //delay(100);
-
         if (client.available()) {
           //Check new string
           stop_all();
@@ -252,23 +242,17 @@ void loop() {
           if (newCheck.equals("S") || speedString.equals("S")){
             Serial.println("Stop");
             stop_all();
+            // Reset values
             analogWrite(enA, 200);
             analogWrite(enB, 200);
-            PIB = false;
             GUI = false;
              // Exit the while loop
             break; 
           }
-          else if(newCheck.equals("P")){
-            PIB = true;
-            GUI = false;
-          }
-          else if(newCheck.equals("U")){
-            delay(1000);
-            speedString = client.readStringUntil('\n'); // Read the string until newline character
+          else{
+            // Speed String to Int
+            UserSpeed = newCheck.toInt();
             GUI = true;
-            PIB = false;
-            
           }
         }
       }
@@ -286,7 +270,7 @@ void countRight() {
   count++;
 }
 
-//Distance function
+// Distance function
 void updateDistance(int ticks, int count, double distance, unsigned long ticksReset, double wheelCircumference) {
   if (ticks >= revolution) {
     count++;
@@ -362,13 +346,12 @@ void Check(bool all_clearL, bool all_clearR, int cm) {
   }
 }
 
-//GUI function
+// GUI function
 void GUIControl(int desiredVelocity){
-  pwmValue = map(desiredVelocity, 0, 10, 10, 250); // Assuming the velocity is in the range [0, 1] m/s
-  //Serial.print("Mapped PWM Value: ");
-  //Serial.println(pwmValue);
-      
-  // Apply the new speed to both moto
+  //Speed to Voltage
+  pwmValue = map(desiredVelocity, 0, 10, 10, 250);
+     
+  //Apply the new speed
   analogWrite(enA, pwmValue);
   analogWrite(enB, pwmValue);
 }
